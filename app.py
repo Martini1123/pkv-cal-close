@@ -10,6 +10,8 @@ Der Token in der Webhook-Adresse ist zugleich das Signatur-Geheimnis von Cal.com
 steht nur sein SHA-256, deshalb darf das Repo öffentlich sein. Einziges Geheimnis ist
 CLOSE_API_KEY, das liegt nur in den Umgebungsvariablen von Render.
 
+Außerdem liefert der Dienst die WhatsApp-Vorlagenseite aus (siehe whatsapp.py).
+
 Nur Standardbibliothek, damit Render nichts installieren muss.
 """
 
@@ -28,6 +30,8 @@ import urllib.request
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from zoneinfo import ZoneInfo
+
+import whatsapp
 
 CLOSE_API = "https://api.close.com/api/v1"
 TOKEN_SHA256 = os.environ.get(
@@ -365,20 +369,49 @@ def token_ok(token):
 
 
 class Webhook(BaseHTTPRequestHandler):
-    def _antwort(self, code, text):
+    def _antwort(self, code, text, art="text/plain"):
         roh = text.encode()
         self.send_response(code)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Type", art + "; charset=utf-8")
         self.send_header("Content-Length", str(len(roh)))
+        # Die WhatsApp-Seite zeigt Kontaktdaten: nie zwischenspeichern, nie weiterreichen.
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Robots-Tag", "noindex")
         self.end_headers()
         self.wfile.write(roh)
 
+    def _wa_ziel(self):
+        """Lead-ID aus /wa/<lead_id>[/log], wenn der Schlüssel im Link stimmt."""
+        pfad, _, abfrage = self.path.partition("?")
+        teile = pfad.strip("/").split("/")
+        parameter = urllib.parse.parse_qs(abfrage)
+        if len(teile) not in (2, 3) or teile[0] != "wa" or not re.fullmatch(r"lead_[A-Za-z0-9]+", teile[1]):
+            return None, None, parameter
+        if not whatsapp.schluessel_ok((parameter.get("k") or [""])[0]):
+            return None, None, parameter
+        return teile[1], (teile[2] if len(teile) == 3 else ""), parameter
+
     def do_GET(self):
-        self._antwort(200, "ok")
+        if not self.path.startswith("/wa/"):
+            return self._antwort(200, "ok")
+        lead_id, rest, parameter = self._wa_ziel()
+        if not lead_id or rest:
+            return self._antwort(404, whatsapp.fehlerseite("Link ungültig – bitte den Link „💬 WhatsApp-Vorlagen“ in Close nutzen."), "text/html")
+        try:
+            daten = whatsapp.seiten_daten(close, lead_id, (parameter.get("u") or [""])[0].strip())
+        except Exception as fehler:
+            log("FEHLER WhatsApp-Seite", type(fehler).__name__, fehler)
+            return self._antwort(500, whatsapp.fehlerseite("Close ist gerade nicht erreichbar. Bitte gleich nochmal öffnen."), "text/html")
+        if not daten:
+            return self._antwort(404, whatsapp.fehlerseite("Lead nicht gefunden."), "text/html")
+        self._antwort(200, whatsapp.seite(daten, parameter["k"][0]), "text/html")
 
     do_HEAD = do_GET
 
     def do_POST(self):
+        if self.path.startswith("/wa/"):
+            return self._wa_protokoll()
         teile = self.path.split("?")[0].strip("/").split("/")
         if len(teile) != 2 or teile[0] != "cal" or not token_ok(teile[1]):
             return self._antwort(404, "nicht gefunden")
@@ -393,6 +426,19 @@ class Webhook(BaseHTTPRequestHandler):
         except Exception as fehler:  # Cal.com wiederholt nicht – Fehler muss im Render-Log stehen
             log("FEHLER", type(fehler).__name__, fehler)
             return self._antwort(500, "Fehler")
+        self._antwort(200, "ok")
+
+    def _wa_protokoll(self):
+        lead_id, rest, _ = self._wa_ziel()
+        if not lead_id or rest != "log":
+            return self._antwort(404, "nicht gefunden")
+        try:
+            roh = self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 20000))
+            whatsapp.protokollieren(close, lead_id, json.loads(roh))
+        except Exception as fehler:
+            log("FEHLER WhatsApp-Notiz", type(fehler).__name__, fehler)
+            return self._antwort(500, "Fehler")
+        log("WhatsApp-Vorlage geöffnet", lead_id)
         self._antwort(200, "ok")
 
     def log_message(self, *args):

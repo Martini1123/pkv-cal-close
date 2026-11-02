@@ -8,6 +8,10 @@ Kleiner Webhook-Dienst: Jede Buchung der Cal.com-Terminart `pkv-beratung` landet
 | Termin verschoben | dieselbe Opportunity bekommt die neue Zeit · Notiz |
 | Termin abgesagt | Opportunity → „Termin abgesagt“ · Lead-Status „Termin abgesagt / No-Show“ (nur wenn er auf „Termin gebucht“ stand) · Notiz mit Grund |
 
+## WhatsApp-Vorlagen
+
+Lead-Link „💬 WhatsApp-Vorlagen“ in Close → `/wa/<lead_id>?k=<schlüssel>&u=<Nutzer>`. Die Seite füllt Olivers 7 Vorlagen mit Herr/Frau + Nachname, Terminzeit (aus „Termin am“) und Absender und öffnet WhatsApp per `wa.me` – gesendet wird aus dem eigenen WhatsApp (Close kann WhatsApp nicht selbst senden). Beim Öffnen: Notiz am Lead, Anrede wird am Kontakt (Feld „Anrede“) gemerkt. Texte ändern: `VORLAGEN` in `whatsapp.py`.
+
 ## Betrieb
 
 - Läuft auf Render (Web Service, Starter, Frankfurt), nur Python-Standardbibliothek, kein Build.
