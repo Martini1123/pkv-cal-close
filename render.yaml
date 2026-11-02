@@ -1,0 +1,15 @@
+# Render-Bauplan: ein kleiner Web-Dienst (Starter, ca. 7 $/Monat) in Frankfurt.
+# Einziges Geheimnis ist CLOSE_API_KEY – wird im Dashboard eingetragen, nie im Repo.
+services:
+  - type: web
+    name: pkv-cal-close
+    runtime: python
+    region: frankfurt
+    plan: starter
+    branch: main
+    buildCommand: "true"
+    startCommand: python app.py
+    healthCheckPath: /
+    envVars:
+      - key: CLOSE_API_KEY
+        sync: false
