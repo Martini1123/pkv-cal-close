@@ -129,10 +129,12 @@ def buchung_lesen(p):
     ort = antwort(resp, "location")
     telefon, art = "", "Online"
     if isinstance(ort, dict):
-        if ort.get("value") == "attendeePhone":
+        if ort.get("value") in ("phone", "attendeePhone"):  # echte Buchungen schicken „phone“
             telefon, art = ort.get("optionValue") or "", "Telefon"
         elif "meet" in str(ort.get("value", "")):
             art = "Google Meet"
+    elif re.fullmatch(r"[\d\s+()/-]{7,}", str(p.get("location") or "")):
+        telefon, art = p["location"], "Telefon"
     telefon = telefon_normal(telefon or teilnehmer.get("phoneNumber") or antwort(resp, "attendeePhoneNumber"))
     link = ((p.get("metadata") or {}).get("videoCallUrl")
             or (p.get("videoCallData") or {}).get("url")
